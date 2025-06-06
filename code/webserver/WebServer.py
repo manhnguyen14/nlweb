@@ -32,14 +32,14 @@ async def handle_client(reader, writer, fulfill_request):
     """Handle a client connection by parsing the HTTP request and passing it to fulfill_request."""
     request_id = f"client_{int(time.time()*1000)}"
     connection_alive = True
-    
+
     try:
         # Read the request line
         request_line = await reader.readline()
         if not request_line:
             connection_alive = False
             return
-            
+
         request_line = request_line.decode('utf-8', errors='replace').rstrip('\r\n')
         words = request_line.split()
         if len(words) < 2:
@@ -49,10 +49,10 @@ async def handle_client(reader, writer, fulfill_request):
             await writer.drain()
             connection_alive = False
             return
-            
+
         method, path = words[0], words[1]
         logger.debug(f"[{request_id}] {method} {path}")
-        
+
         # Parse headers
         headers = {}
         while True:
@@ -60,7 +60,7 @@ async def handle_client(reader, writer, fulfill_request):
                 header_line = await reader.readline()
                 if not header_line or header_line == b'\r\n':
                     break
-                    
+
                 hdr = header_line.decode('utf-8').rstrip('\r\n')
                 if ":" not in hdr:
                     continue
@@ -69,7 +69,7 @@ async def handle_client(reader, writer, fulfill_request):
             except (ConnectionResetError, BrokenPipeError) as e:
                 connection_alive = False
                 return
-        
+
         # Parse query parameters
         if '?' in path:
             path, query_string = path.split('?', 1)
@@ -82,7 +82,7 @@ async def handle_client(reader, writer, fulfill_request):
                 query_params = {}
         else:
             query_params = {}
-        
+
         # Read request body if Content-Length is provided
         body = None
         if 'content-length' in headers:
@@ -92,30 +92,30 @@ async def handle_client(reader, writer, fulfill_request):
             except (ValueError, ConnectionResetError, BrokenPipeError) as e:
                 connection_alive = False
                 return
-        
+
         # Create a streaming response handler
         async def send_response(status_code, response_headers, end_response=False):
             """Send HTTP status and headers to the client."""
             nonlocal connection_alive
-            
+
             if not connection_alive:
                 return
-                
+
             try:
                 status_line = f"HTTP/1.1 {status_code}\r\n"
                 writer.write(status_line.encode('utf-8'))
-                
+
                 # Add CORS headers if enabled
                 if CONFIG.server.enable_cors and 'Origin' in headers:
                     response_headers['Access-Control-Allow-Origin'] = '*'
                     response_headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
                     response_headers['Access-Control-Allow-Headers'] = 'Content-Type'
-                
+
                 # Send headers
                 for header_name, header_value in response_headers.items():
                     header_line = f"{header_name}: {header_value}\r\n"
                     writer.write(header_line.encode('utf-8'))
-                
+
                 # End headers
                 writer.write(b"\r\n")
                 await writer.drain()   
@@ -126,23 +126,23 @@ async def handle_client(reader, writer, fulfill_request):
                 connection_alive = False
             except Exception as e:
                 connection_alive = False
-        
+
         # Create a streaming content sender
         async def send_chunk(chunk, end_response=False):
             """Send a chunk of data to the client."""
             nonlocal connection_alive
-            
+
             if not connection_alive:
                 return
-                
+
             if not hasattr(send_response, 'headers_sent') or not send_response.headers_sent:
                 logger.warning(f"[{request_id}] Headers must be sent before content")
                 return
-                
+
             if hasattr(send_response, 'ended') and send_response.ended:
                 logger.warning(f"[{request_id}] Response has already been ended")
                 return
-                
+
             try:
                 chunk_size = 0
                 if chunk:
@@ -154,7 +154,7 @@ async def handle_client(reader, writer, fulfill_request):
                         chunk_size = len(chunk)
                         writer.write(chunk)
                     await writer.drain()
-                
+
                 send_response.ended = end_response
             except (ConnectionResetError, BrokenPipeError) as e:
                 logger.warning(f"[{request_id}] Connection lost while sending chunk: {str(e)}")
@@ -162,7 +162,7 @@ async def handle_client(reader, writer, fulfill_request):
             except Exception as e:
                 logger.warning(f"[{request_id}] Error sending chunk: {str(e)}")
                 connection_alive = False
-        
+
         # Call the user-provided fulfill_request function with streaming capabilities
         if connection_alive:
             try:
@@ -177,7 +177,7 @@ async def handle_client(reader, writer, fulfill_request):
                 )
             except Exception as e:
                 logger.error(f"[{request_id}] Error in fulfill_request: {str(e)}", exc_info=True)
-                
+
                 if connection_alive and not (hasattr(send_response, 'headers_sent') and send_response.headers_sent):
                     try:
                         # Send a 500 error if headers haven't been sent yet
@@ -189,7 +189,7 @@ async def handle_client(reader, writer, fulfill_request):
                         await send_chunk(f"Internal server error: {str(e)}".encode('utf-8'), end_response=True)
                     except:
                         pass
-        
+
     except Exception as e:
         logger.error(f"[{request_id}] Critical error handling request: {str(e)}", exc_info=True)
     finally:
@@ -205,10 +205,10 @@ async def handle_client(reader, writer, fulfill_request):
 def handle_site_parameter(query_params):
     """
     Handle site parameter with configuration validation.
-    
+
     Args:
         query_params (dict): Query parameters from request
-        
+
     Returns:
         dict: Modified query parameters with valid site parameter(s)
     """
@@ -231,7 +231,7 @@ def handle_site_parameter(query_params):
                     valid_sites.append(site)
                 else:
                     logger.warning(f"Site '{site}' is not in allowed sites list")
-            
+
             if valid_sites:
                 result_params["site"] = valid_sites
             else:
@@ -247,7 +247,7 @@ def handle_site_parameter(query_params):
     else:
         # No site parameter provided, use all allowed sites from config
         result_params["site"] = allowed_sites
-    
+
     return result_params
 
 async def start_server(host=None, port=None, fulfill_request=None, use_https=False, 
@@ -256,38 +256,38 @@ async def start_server(host=None, port=None, fulfill_request=None, use_https=Fal
     Start the HTTP/HTTPS server with the provided request handler.
     """
     import ssl
-    
+
     if fulfill_request is None:
         raise ValueError("fulfill_request function must be provided")
-    
+
     # Use configured values if not provided
     host = host or CONFIG.server.host
     port = port or CONFIG.port
-    
+
     ssl_context = None
     if use_https or CONFIG.is_ssl_enabled():
         # Get SSL files from config if not provided
         ssl_cert_file = ssl_cert_file or CONFIG.get_ssl_cert_path()
         ssl_key_file = ssl_key_file or CONFIG.get_ssl_key_path()
-        
+
         if not ssl_cert_file or not ssl_key_file:
             if CONFIG.is_ssl_enabled():
                 raise ValueError("SSL is enabled in config but certificate/key files not found in environment")
             else:
                 raise ValueError("SSL certificate and key files must be provided for HTTPS")
-        
+
         # Create SSL context - using configuration from working code
         ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
         ssl_context.maximum_version = ssl.TLSVersion.TLSv1_3
         ssl_context.set_ciphers('ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256')
         ssl_context.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
-        
+
         try:
             ssl_context.load_cert_chain(ssl_cert_file, ssl_key_file)
         except (ssl.SSLError, FileNotFoundError) as e:
             raise ValueError(f"Failed to load SSL certificate: {e}")
-    
+
     # Start server with or without SSL
     server = await asyncio.start_server(
         lambda r, w: handle_client(r, w, fulfill_request), 
@@ -295,7 +295,7 @@ async def start_server(host=None, port=None, fulfill_request=None, use_https=Fal
         port,
         ssl=ssl_context
     )
-    
+
     addr = server.sockets[0].getsockname()
     protocol = "HTTPS" if (use_https or ssl_context) else "HTTP"
     url_protocol = "https" if (use_https or ssl_context) else "http"
@@ -306,7 +306,7 @@ async def start_server(host=None, port=None, fulfill_request=None, use_https=Fal
 async def fulfill_request(method, path, headers, query_params, body, send_response, send_chunk):
     '''
     Process an HTTP request and stream the response back.
-    
+
     Args:
         method (str): HTTP method (GET, POST, etc.)
         path (str): URL path
@@ -325,7 +325,7 @@ async def fulfill_request(method, path, headers, query_params, body, send_respon
 
         if ("generate_mode" in query_params):
             generate_mode = get_param(query_params, "generate_mode", str, "none")
-           
+
         if path == "/" or path == "":
             # Serve the home page as /static/index.html
             # First check if the file exists
@@ -356,7 +356,7 @@ async def fulfill_request(method, path, headers, query_params, body, send_respon
             if ("streaming" in query_params):
                 strval = get_param(query_params, "streaming", str, "False")
                 use_streaming = strval not in ["False", "false", "0"]
-                
+
             # Handle MCP requests with streaming parameter
             logger.info(f"Routing to MCP handler (streaming={use_streaming})")
             await handle_mcp_request(query_params, body, send_response, send_chunk, streaming=use_streaming)
@@ -364,7 +364,11 @@ async def fulfill_request(method, path, headers, query_params, body, send_respon
         elif (path.find("ask") != -1):
             # Handle site parameter validation for ask endpoint
             validated_query_params = handle_site_parameter(query_params)
-            
+
+            # Log user chat interaction
+            user_query = validated_query_params.get("q", [""])[0] if "q" in validated_query_params else ""
+            logger.info(f"User chat: {user_query}")
+
             if (not streaming):
                 if (generate_mode == "generate"):
                     retval = await GenerateAnswer(validated_query_params, None).runQuery()
@@ -381,16 +385,16 @@ async def fulfill_request(method, path, headers, query_params, body, send_respon
                     'Connection': 'keep-alive',
                     'X-Accel-Buffering': 'no'  # Disable proxy buffering
                 }
-                
+
                 # Send SSE headers
                 await send_response(200, response_headers)
-                
+
                 # Send initial keep-alive comment to establish connection
                 await send_chunk(": keep-alive\n\n", end_response=False)
-                
+
                 # Create wrapper for chunk sending
                 send_chunk_wrapper = SendChunkWrapper(send_chunk)
-                
+
                 # Handle the request with validated query parameters
                 hr = HandleRequest(method, path, headers, validated_query_params, 
                                    body, send_response, send_chunk_wrapper, generate_mode)
@@ -428,11 +432,11 @@ def get_port():
 if __name__ == "__main__":
     try:
         port = get_port()
-        
+
         # Check if running in Azure App Service or locally
         is_azure = 'WEBSITE_SITE_NAME' in os.environ
         is_local = not is_azure
-        
+
         if is_azure:
             print(f"Running in Azure App Service: {os.environ.get('WEBSITE_SITE_NAME')}")
             print(f"Home directory: {os.environ.get('HOME')}")
@@ -444,7 +448,7 @@ if __name__ == "__main__":
         else:
             print(f"Running on localhost (port {port})")
             use_https = False
-        
+
         if use_https:
             print("Starting HTTPS server")
             # If using command line, use default cert files
@@ -455,7 +459,7 @@ if __name__ == "__main__":
                 # Use config values
                 ssl_cert_file = CONFIG.get_ssl_cert_path()
                 ssl_key_file = CONFIG.get_ssl_key_path()
-                
+
             asyncio.run(start_server(
                 fulfill_request=fulfill_request,
                 use_https=True,

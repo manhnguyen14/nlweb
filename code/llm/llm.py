@@ -49,17 +49,17 @@ async def ask_llm(
 ) -> Dict[str, Any]:
     """
     Route an LLM request to the specified endpoint, with dispatch based on llm_type.
-    
+
     Args:
         prompt: The text prompt to send to the LLM
         schema: JSON schema that the response should conform to
         provider: The LLM endpoint to use (if None, use preferred endpoint from config)
         level: The model tier to use ('low' or 'high')
         timeout: Request timeout in seconds
-        
+
     Returns:
         Parsed JSON response from the LLM
-        
+
     Raises:
         ValueError: If the endpoint is unknown or response cannot be parsed
         TimeoutError: If the request times out
@@ -68,7 +68,10 @@ async def ask_llm(
     logger.debug(f"Initiating LLM request with provider: {provider_name}, level: {level}")
     logger.debug(f"Prompt preview: {prompt[:100]}...")
     logger.debug(f"Schema: {schema}")
-    
+
+    # Log the full prompt for monitoring purposes
+    logger.info(f"LLM prompt sent: {prompt}")
+
     if provider_name not in CONFIG.llm_endpoints:
         error_msg = f"Unknown provider '{provider_name}'"
         logger.error(error_msg)
@@ -88,7 +91,7 @@ async def ask_llm(
 
     model_id = getattr(provider_config.models, level)
     logger.debug(f"Using model: {model_id}")
-    
+
     # Initialize variables for exception handling
     llm_type_for_error = llm_type
 
@@ -99,9 +102,9 @@ async def ask_llm(
             error_msg = f"No implementation for LLM type '{llm_type}'"
             logger.error(error_msg)
             raise ValueError(error_msg)
-            
+
         provider_instance = _llm_type_providers[llm_type]
-        
+
         # Simply call the provider's get_completion method without locking
         # Each provider should handle thread-safety internally
         logger.debug(f"Calling {llm_type} provider completion for endpoint {provider_name}")
@@ -110,8 +113,12 @@ async def ask_llm(
             timeout=timeout
         )
         logger.debug(f"{provider_name} response received, size: {len(str(result))} chars")
+
+        # Log the full response for monitoring purposes
+        logger.info(f"LLM response received: {result}")
+
         return result
-        
+
     except asyncio.TimeoutError:
         logger.error(f"LLM call timed out after {timeout}s with provider {provider_name}")
         raise
